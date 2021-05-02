@@ -1,6 +1,6 @@
 from bitcoinutils.setup import setup
-from bitcoinutils.transactions import Transaction, TxInput, TxOutput, Locktime
-from bitcoinutils.keys import P2pkhAddress, P2shAddress, PrivateKey
+from bitcoinutils.transactions import Locktime
+from bitcoinutils.keys import P2shAddress, PublicKey
 from bitcoinutils.script import Script
 from bitcoinutils.constants import TYPE_ABSOLUTE_TIMELOCK
 import argparse
@@ -20,20 +20,18 @@ def main():
     parser.add_argument('-param', type= int, help = "Add the number of blocks or the time expressed in seconds.")
     args = parser.parse_args()
     
-    
-    public_key = args.pubkey 
+    key = args.pubkey 
     absolute_param = args.param
-        
-    #print(public_key)
-    #print(absolute_param)
     
+    p2pkh_pk = PublicKey(key)
+        
     locktime = Locktime(absolute_param)
 
-    # secret key corresponding to the pubkey needed for the P2SH (P2PKH) transaction
-    p2pkh_sk = PrivateKey(public_key)
-
     # get the address (from the public key)
-    p2pkh_addr = p2pkh_sk.get_public_key().get_address()
+    p2pkh_addr = p2pkh_pk.get_address()
+    
+    #print("Public key: " + p2pkh_pk.to_hex(compressed=True))
+    #print("P2PKH Address: " + p2pkh_addr.to_string())
 
     # create the redeem script
     redeem_script = Script([absolute_param, 'OP_CHECKLOCKTIMEVERIFY', 'OP_DROP', 'OP_DUP', 'OP_HASH160', p2pkh_addr.to_hash160(), 'OP_EQUALVERIFY', 'OP_CHECKSIG'])
@@ -41,6 +39,8 @@ def main():
     # create a P2SH address from a redeem script
     addr = P2shAddress.from_script(redeem_script)
     print("The P2SH address is : " + addr.to_string())
+    
+
 
 if __name__ == "__main__":
     main()
