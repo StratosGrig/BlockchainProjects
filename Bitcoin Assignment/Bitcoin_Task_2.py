@@ -7,6 +7,8 @@ import argparse
 from decimal import Decimal
 from binascii import hexlify, unhexlify
 from bitcoinutils.constants import SATOSHIS_PER_BITCOIN
+import requests
+import json
 
 
 def to_satoshis(num):
@@ -71,6 +73,11 @@ def main():
     # accept a P2PKH address to send the funds to
     to_addr = P2pkhAddress(send_address)
     
+    # calculate the appropriate fees with respect to the size of the transaction
+    response = requests.get("https://mempool.space/api/v1/fees/recommended")
+    fee = response.json()['minimumFee']
+    print("Minumum fee per byte is : " + fee)
+      
     #amount = int( ( Decimal(str(btc_to_send)) - Decimal(str(fee)) ) * 100000000 )
     
     txout = TxOutput(to_satoshis(11), to_addr.to_script_pub_key())
@@ -97,6 +104,8 @@ def main():
     
     # display the transaction id
     print("\nTxId:", tx.get_txid())
+    
+    
     
 if __name__ == "__main__" :
     main()
