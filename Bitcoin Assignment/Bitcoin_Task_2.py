@@ -3,6 +3,7 @@ from bitcoinutils.transactions import Transaction, TxInput, TxOutput, Locktime
 from bitcoinutils.keys import P2pkhAddress, P2shAddress, PrivateKey
 from bitcoinutils.script import Script
 from bitcoinutils.constants import TYPE_ABSOLUTE_TIMELOCK
+from bitcoinutils.proxy import NodeProxy
 import argparse
 from decimal import Decimal
 from binascii import hexlify, unhexlify
@@ -39,11 +40,12 @@ def main():
     vout = 0
         
     locktime = Locktime(absolute_param)
-    
-    
-    # create transaction input from tx id of UTXO (contained 11.1 tBTC)
-    txin = TxInput(txid, vout, sequence= locktime.for_transaction())
-    
+        
+    #set proxy
+    username = 
+    password = 
+    proxy = NodeProxy(username, password).get_proxy()
+
     
     # secret key corresponding to the pubkey needed for the P2SH (P2PKH) transaction
     p2pkh_sk = PrivateKey(key)
@@ -61,38 +63,42 @@ def main():
     redeem_script = Script([absolute_param, 'OP_CHECKLOCKTIMEVERIFY', 'OP_DROP', 'OP_DUP', 'OP_HASH160', p2pkh_addr.to_hash160(), 'OP_EQUALVERIFY', 'OP_CHECKSIG'])
 
     # accept a P2SH address to get the funds from
-    addr = P2shAddress.from_script(redeem_script)
-    print("The P2SH address is : " + addr.to_string())
+    addr = P2shAddress.from_script(redeem_script) 
+    print("The P2SH address to get the funds from is : " + addr.to_string())
     
     
     #check if the P2SH address has any UTXOs to get funds from
-    
-    
+    #proxy.get
+        
     
     
     # accept a P2PKH address to send the funds to
     to_addr = P2pkhAddress(send_address)
+    print("The P2PKH address to send the funds to is : " + to_addr.to_string())
     
     # calculate the appropriate fees with respect to the size of the transaction
     response = requests.get("https://mempool.space/api/v1/fees/recommended")
-    fee = response.json()['minimumFee']
-    print("Minumum fee per byte is : " + fee)
+    fee = response.json()['fastestFee']
+    print("Fastest fee per byte is : %d " %fee)
       
     #amount = int( ( Decimal(str(btc_to_send)) - Decimal(str(fee)) ) * 100000000 )
     
-    txout = TxOutput(to_satoshis(11), to_addr.to_script_pub_key())
     
-    # create transaction from inputs/outputs
+    #send all funds that the P2SH address received to the P2PKH address provided  
+    txin = TxInput(txid, vout, sequence= locktime.for_transaction())   
+
+    btc_to_send = 11
+    amount = btc_to_send - fee
+    txout = TxOutput(to_satoshis(amount), to_addr.to_script_pub_key())
+    
     tx = Transaction([txin], [txout])
     
     # display the raw unsigned transaction
     print("\nRaw unsigned transaction:\n" + tx.serialize())
     
-    # use the private key corresponding to the address that contains the
-    # UTXO we are trying to spend to create the signature for the txin -
-    # note that the redeem script is passed to replace the scriptSig
+    # sign the transaction
     sig = p2pkh_sk.sign_input(tx, 0, redeem_script )
-    print(sig)
+    #print(sig)
     
     # set the scriptSig (unlocking script) -- unlock the P2PKH (sig, pk) plus
     # the redeem script, since it is a P2SH
@@ -104,8 +110,19 @@ def main():
     
     # display the transaction id
     print("\nTxId:", tx.get_txid())
+   
+   # verify that the transaction is valid and will be accepted by the Bitcoin nodes
+   # if the transaction is valid, send it to the blockchain
     
-    
+   current_block = proxy.getblockcount()
+   current_block_hash = proxy.getblockhash(current_block)
+   proxy.getblock(current_block_hash)
+   if ( proxy.getblock(current_block_hash['confirmations'] > param ):
+      print("Sending transaction to blockchain")
+      proxy.sendrawtransaction(signed_tx)  
+   else: 
+      print("Transaction is not valid")
+
     
 if __name__ == "__main__" :
     main()
