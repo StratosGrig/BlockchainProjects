@@ -36,9 +36,8 @@ def main():
     key = args.key 
     absolute_param = args.param
     send_address = args.to_address
-    txid = '76c102821b916a625bd3f0c3c6e35d5c308b7c23e78b8866b06a3a466041db0a'
-    vout = 0
         
+    #set Locktime    
     locktime = Locktime(absolute_param)
         
     #set proxy
@@ -46,7 +45,6 @@ def main():
     password = 
     proxy = NodeProxy(username, password).get_proxy()
 
-    
     # secret key corresponding to the pubkey needed for the P2SH (P2PKH) transaction
     p2pkh_sk = PrivateKey(key)
     
@@ -68,8 +66,12 @@ def main():
     
     
     #check if the P2SH address has any UTXOs to get funds from
-    #proxy.get
-        
+    minconf = 0 
+    maxconf = 9999999
+    list = proxy.listunspent(minconf,maxconf,"[\"addr\"]")
+    
+    #calculate the amount of bitcoins to send
+    btc_to_send = sum(map(lambda x: int(x['amount']), json.loads(list)))
     
     
     # accept a P2PKH address to send the funds to
@@ -81,13 +83,14 @@ def main():
     fee = response.json()['fastestFee']
     print("Fastest fee per byte is : %d " %fee)
       
-    #amount = int( ( Decimal(str(btc_to_send)) - Decimal(str(fee)) ) * 100000000 )
-    
-    
     #send all funds that the P2SH address received to the P2PKH address provided  
-    txin = TxInput(txid, vout, sequence= locktime.for_transaction())   
+    
+    my_list = json.loads(list)
+    txin = []
+    for i in (my_list) : 
+        x = TxInput(i['txid'], i['vout'], sequence= locktime.for_transaction())
+        txin.append(x)    
 
-    btc_to_send = 11
     amount = btc_to_send - fee
     txout = TxOutput(to_satoshis(amount), to_addr.to_script_pub_key())
     
