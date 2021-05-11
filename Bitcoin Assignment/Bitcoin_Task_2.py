@@ -26,7 +26,7 @@ def main():
     # a P2PKH locking funds with a key as well as for an absolute amount of blocks or an absolute amount of seconds since the transaction.
     #
 
-    parser = argparse.ArgumentParser(description='Give the private key, a future time expressed either in block height or in UNIX Epoch time and the P2SH address will be displayed')
+    parser = argparse.ArgumentParser(description='Give the private key, a future time expressed either in block height or in UNIX Epoch time and the P2SH address to send the funds')
     parser.add_argument('key', help="Add the private key.")
     parser.add_argument('-param', type= int, help = "Add the number of blocks or the time expressed in seconds.")
     parser.add_argument('-to_address', type= str , help="Add the adress that will sent/spend")
@@ -119,13 +119,15 @@ def main():
     
    current_block = proxy.getblockcount()
    current_block_hash = proxy.getblockhash(current_block)
-   proxy.getblock(current_block_hash)
-   if ( proxy.getblock(current_block_hash['confirmations'] > param ):
-      print("Sending transaction to blockchain")
-      proxy.sendrawtransaction(signed_tx)  
+   current_block_info = proxy.getblock(current_block_hash, 1)
+   
+   info = json.loads(current_block_info)
+   if (info['confirmations'] > absolute_param):
+        print("Sending transaction to blockchain")
+        proxy.sendrawtransaction(signed_tx)   
    else: 
       print("Transaction is not valid")
-
+   
     
 if __name__ == "__main__" :
     main()
