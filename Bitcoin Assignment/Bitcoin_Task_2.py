@@ -27,7 +27,7 @@ def main():
 
     parser = argparse.ArgumentParser(
         description='Give the private key, a future time expressed either in block height or in UNIX Epoch time and '
-                    'the P2SH address to send the funds') 
+                    'the P2SH address to send the funds')
     parser.add_argument('key', help="Add the private key.")
     parser.add_argument('-param', type=int, help="Add the number of blocks or the time expressed in seconds.")
     parser.add_argument('-to_address', type=str, help="Add the adress that will sent/spend")
@@ -42,8 +42,8 @@ def main():
     locktime = Locktime(absolute_param)
 
     # set proxy
-    username =
-    password =
+    username = "alice"
+    password = "DONT_USE_THIS_YOU_WILL_GET_ROBBED_8ak1gI25KFTvjovL3gAM967mies3E="
     proxy = NodeProxy(username, password).get_proxy()
 
     # secret key corresponding to the pubkey needed for the P2SH (P2PKH) transaction
@@ -70,7 +70,7 @@ def main():
     # check if the P2SH address has any UTXOs to get funds from
     minconf = 0
     maxconf = 9999999
-    list = proxy.listunspent(minconf, maxconf, "[\"addr\"]")
+    list = proxy.listunspent(minconf, maxconf, [addr])
 
     # calculate the amount of bitcoins to send
     btc_to_send = sum(map(lambda x: int(x['amount']), json.loads(list)))
@@ -88,7 +88,7 @@ def main():
 
     my_list = json.loads(list)
     txin = []
-    for i in (my_list):
+    for i in my_list:
         x = TxInput(i['txid'], i['vout'], sequence=locktime.for_transaction())
         txin.append(x)
 
@@ -127,6 +127,7 @@ def main():
         proxy.sendrawtransaction(signed_tx)
     else:
         print("Transaction is not valid")
+
 
 if __name__ == "__main__":
     main()
