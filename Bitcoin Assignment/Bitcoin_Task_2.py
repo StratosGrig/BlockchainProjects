@@ -1,5 +1,5 @@
 from bitcoinutils.setup import setup
-from bitcoinutils.transactions import Transaction, TxInput, TxOutput, Locktime
+from bitcoinutils.transactions import Transaction, TxInput, TxOutput, Locktime, Sequence
 from bitcoinutils.keys import P2pkhAddress, P2shAddress, PrivateKey
 from bitcoinutils.script import Script
 from bitcoinutils.constants import TYPE_ABSOLUTE_TIMELOCK
@@ -7,7 +7,6 @@ from bitcoinutils.proxy import NodeProxy
 import argparse
 from bitcoinutils.constants import SATOSHIS_PER_BITCOIN
 import requests
-import json
 
 
 def to_satoshis(num):
@@ -21,8 +20,8 @@ def main():
     setup('regtest')
 
     #
-    # This script creates a P2SH address containing a CHECKLOCKTIMEVERIFY plus a P2PKH locking funds with a key as 
-    # well as for an absolute amount of blocks or an absolute amount of seconds since the transaction. 
+    # This script creates a P2SH address containing a CHECKLOCKTIMEVERIFY plus a P2PKH locking funds with a key as
+    # well as for an absolute amount of blocks or an absolute amount of seconds since the transaction.
     #
 
     parser = argparse.ArgumentParser(
@@ -39,6 +38,7 @@ def main():
     send_address = args.to_address
 
     # set Locktime
+    seq = Sequence(TYPE_ABSOLUTE_TIMELOCK, absolute_param)
     locktime = Locktime(absolute_param)
 
     # set proxy
@@ -60,7 +60,7 @@ def main():
 
     # create the redeem script
     redeem_script = Script(
-        [absolute_param, 'OP_CHECKLOCKTIMEVERIFY', 'OP_DROP', 'OP_DUP', 'OP_HASH160', p2pkh_addr.to_hash160(),
+        [seq.for_script(), 'OP_CHECKLOCKTIMEVERIFY', 'OP_DROP', 'OP_DUP', 'OP_HASH160', p2pkh_addr.to_hash160(),
          'OP_EQUALVERIFY', 'OP_CHECKSIG'])
 
     # accept a P2SH address to get the funds from
@@ -68,12 +68,24 @@ def main():
     print("The P2SH address to get the funds from is : " + addr.to_string())
 
     # check if the P2SH address has any UTXOs to get funds from
-    minconf = 0
-    maxconf = 9999999
-    list = proxy.listunspent(minconf, maxconf, [addr])
 
-    # calculate the amount of bitcoins to send
-    btc_to_send = sum(map(lambda x: int(x['amount']), json.loads(list)))
+    proxy.importaddress(addr.to_string(), "P2SH to get the funds from")
+    minconf = 0
+    maxconf = 99999999
+    my_list = proxy.listunspent(minconf, maxconf, [addr.to_string()])
+
+    # Gather all funds that the P2SH address received to send to the P2PKH address provided
+
+    txin_list = []
+    btc_to_send = 0
+    for i in my_list:
+        txin = TxInput(i['txid'], i['vout'], sequence=seq.for_input_sequence())
+        txin_list.append(txin)
+        btc_to_send = btc_to_send + i['amount']
+
+    if btc_to_send == 0:
+        print("No btc found to send")
+        quit()
 
     # accept a P2PKH address to send the funds to
     to_addr = P2pkhAddress(send_address)
@@ -81,52 +93,55 @@ def main():
 
     # calculate the appropriate fees with respect to the size of the transaction
     response = requests.get("https://mempool.space/api/v1/fees/recommended")
-    fee = response.json()['fastestFee']
-    print("Fastest fee per byte is : %d " % fee)
+    fee_per_byte = response.json()['fastestFee']
+    print("Fastest fee per byte is : %d " % fee_per_byte)
 
-    # send all funds that the P2SH address received to the P2PKH address provided
+    # calculate transaction size as described at 
+    # https://bitcoin.stackexchange.com/questions/1195/how-to-calculate-transaction-size-before-sending-legacy-non-segwit-p2pkh-p2sh 
+    tx_size = len(my_list) * 180 + 34 + 10 + len(my_list)
+    total_fees = tx_size * fee_per_byte / (1024 * 10 ** 8)
+    print('Total fees are : ', total_fees)
 
-    my_list = json.loads(list)
-    txin = []
-    for i in my_list:
-        x = TxInput(i['txid'], i['vout'], sequence=locktime.for_transaction())
-        txin.append(x)
+    # Calculate the final amount
+    amount = btc_to_send - total_fees
+    # print(amount)
 
-    amount = btc_to_send - fee
+    # Create transaction output
     txout = TxOutput(to_satoshis(amount), to_addr.to_script_pub_key())
 
-    tx = Transaction([txin], [txout])
+    # Create transaction after the inputs and the outputs
+    tx = Transaction(txin_list, [txout], locktime.for_transaction())
+
+    # For each transaction - when dealing with multiple inputs, you will need to sign all of them
+    for i, txin in enumerate(my_list):
+        sig = p2pkh_sk.sign_input(tx, i, redeem_script)
+        # print(sig)
+        # set the scriptSig (unlocking script) -- unlock the P2PKH (sig, pk) plus
+        # the redeem script, since it is a P2SH
+        txin.script_sig = Script([sig, p2pkh_pk.to_hex(), redeem_script.to_hex()])
+
+    # display the raw signed transaction, ready to be broadcasted
+    signed_tx = tx.serialize()
+    print("\nRaw signed transaction:\n" + signed_tx)
 
     # display the raw unsigned transaction
     print("\nRaw unsigned transaction:\n" + tx.serialize())
-
-    # sign the transaction
-    sig = p2pkh_sk.sign_input(tx, 0, redeem_script)
-    # print(sig)
-
-    # set the scriptSig (unlocking script) -- unlock the P2PKH (sig, pk) plus
-    # the redeem script, since it is a P2SH
-    txin.script_sig = Script([sig, p2pkh_pk.to_hex(), redeem_script.to_hex()])
-    signed_tx = tx.serialize()
-
-    # display the raw signed transaction, ready to be broadcasted
-    print("\nRaw signed transaction:\n" + signed_tx)
 
     # display the transaction id
     print("\nTxId:", tx.get_txid())
 
     # verify that the transaction is valid and will be accepted by the Bitcoin nodes
     # if the transaction is valid, send it to the blockchain
-    current_block = proxy.getblockcount()
-    current_block_hash = proxy.getblockhash(current_block)
-    current_block_info = proxy.getblock(current_block_hash, 1)
 
-    info = json.loads(current_block_info)
-    if info['confirmations'] > absolute_param:
+    is_valid = proxy.testmempoolaccept([signed_tx])
+    # print(is_valid)
+    if is_valid[0]['allowed']:
+        print("Transaction is valid!")
         print("Sending transaction to blockchain..")
         proxy.sendrawtransaction(signed_tx)
     else:
-        print("Transaction is not valid")
+        print("Transaction not valid")
+        quit()
 
 
 if __name__ == "__main__":
